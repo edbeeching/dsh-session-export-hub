@@ -1,0 +1,39 @@
+{
+  "name": "dsh-session-export-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness plugin: export session telemetry as Hugging Face Session Traces (STS) JSONL and push it to a private Hub dataset.",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sts": {
+      "types": "./dist/sts.d.ts",
+      "import": "./dist/sts.js"
+    }
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --experimental-transform-types tests/sts.test.mts",
+    "smoke": "node --experimental-strip-types --experimental-transform-types scripts/smoke.mts"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0"
+  }
+}

@@ -1,0 +1,9 @@
+# dsh-session-export-hub bundle layer.
+#
+# A profile applies this layer automatically when the package is installed via
+# `dsh plugin --profile <name> add <this-package>` (the `dsh.bundle` manifest
+# declaration in package.json is what makes it a layer). Users may override any
+# key here from their profile's own cordis.patch.yml or a --patch overlay.
+- insert:
+    - id: session-export-hub
+      name: dsh-session-export-hub
