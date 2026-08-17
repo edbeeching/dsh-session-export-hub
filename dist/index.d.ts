@@ -8,9 +8,13 @@
  * typical setups — or to `hf` if `cliPath` is overridden. The dataset repo is
  * created as private on first push if it does not exist yet.
  *
- * Zero runtime dependencies: everything comes from the harness context
- * (`sessions`, `commands`) and Node builtins.
+ * Config is declared as a schemastery `Config` schema (the DSH convention):
+ * the loader validates the row's config at boot, the web settings surface can
+ * render it, and `apply()` re-validates defensively for standalone use.
+ * Everything else comes from the harness context (`sessions`, `commands`)
+ * and Node builtins.
  */
+import z from "@deepseek-ai/schemastery";
 import { type DshEvent } from "./sts.js";
 export declare const name = "session-export-hub";
 export declare const inject: string[];
@@ -39,6 +43,42 @@ export interface PluginConfig {
         replace: string;
     }>;
 }
+/** Schemastery schema for the plugin's row config; validated by the loader at boot. */
+export declare const Config: z<Schemastery.ObjectS<{
+    repo: z<string, string>;
+    private: z<boolean, boolean>;
+    harness: z<string, string>;
+    trigger: z<"turn" | "dispose" | "manual", "turn" | "dispose" | "manual">;
+    includeSystem: z<boolean, boolean>;
+    includeFeedback: z<boolean, boolean>;
+    cliPath: z<string, string>;
+    token: z<string, string>;
+    commitPrefix: z<string, string>;
+    redact: z<({
+        pattern?: string | null | undefined;
+        replace?: string | null | undefined;
+    } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+        pattern: z<string, string>;
+        replace: z<string, string>;
+    }>[]>;
+}>, Schemastery.ObjectT<{
+    repo: z<string, string>;
+    private: z<boolean, boolean>;
+    harness: z<string, string>;
+    trigger: z<"turn" | "dispose" | "manual", "turn" | "dispose" | "manual">;
+    includeSystem: z<boolean, boolean>;
+    includeFeedback: z<boolean, boolean>;
+    cliPath: z<string, string>;
+    token: z<string, string>;
+    commitPrefix: z<string, string>;
+    redact: z<({
+        pattern?: string | null | undefined;
+        replace?: string | null | undefined;
+    } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+        pattern: z<string, string>;
+        replace: z<string, string>;
+    }>[]>;
+}>>;
 export declare const DEFAULTS: PluginConfig;
 interface Logger {
     info(message: string): void;
@@ -53,6 +93,7 @@ interface CommandInvocation {
     agent: {
         session: SessionLike;
     };
+    rawInput: string;
 }
 interface HarnessContext {
     logger: Logger;

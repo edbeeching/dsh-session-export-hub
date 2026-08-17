@@ -37,21 +37,6 @@ push**, so the viewer always shows the current state of the session.
 > The dataset is created **private** by default. Mount `redact` rules to scrub
 > text before upload (see below).
 
-## Config
-
-| key | default | meaning |
-|---|---|---|
-| `repo` | `edbeeching/dsh-agent-traces` | Hub dataset id (`owner/name`), created private if missing |
-| `private` | `true` | create/upload with private visibility |
-| `harness` | `deepseek-harness` | STS `harness` field (renderer/icon on the Hub) |
-| `trigger` | `turn` | `turn` = push after every turn/end (+ final push on dispose) · `dispose` = push when a session closes · `manual` = only via `/share` |
-| `includeSystem` | `true` | emit the system prompt as a `system` message |
-| `includeFeedback` | `false` | emit `feedback/record` events as `system` messages |
-| `cliPath` | `huggingface-cli` | CLI binary for uploads (`hf` also works) |
-| `token` | `HF_TOKEN` env, else cached `~/.cache/huggingface/token` | access token |
-| `commitPrefix` | `dsh trace` | prefix for the upload commit message |
-| `redact` | `[]` | `[{ pattern, replace }]` regex rules applied to every shipped text |
-
 ## Install into a profile
 
 The package declares `dsh.bundle` (see `cordis.patch.yml`), so installing it
@@ -72,19 +57,45 @@ time). Remove with `dsh plugin --profile web remove dsh-session-export-hub`.
 
 ### Configuration
 
-The layer inserts the row with code defaults; override per profile by adding a
-row with the same id to the profile's `cordis.patch.yml` (a later layer's
-`config` replaces the whole value, not just changed keys):
+Config is declared as a schemastery `Config` schema: the loader **validates
+the row's config at boot** (invalid values fail with a readable message) and
+defaults are applied automatically. The table below lists every key.
+
+| key | default | meaning |
+|---|---|---|
+| `repo` | `edbeeching/dsh-agent-traces` | Hub dataset id (`owner/name`), created private if missing |
+| `private` | `true` | create/upload with private visibility |
+| `harness` | `deepseek-harness` | STS `harness` field (renderer/icon on the Hub) |
+| `trigger` | `turn` | `turn` = push after every turn/end (+ final push on dispose) · `dispose` = push when a session closes · `manual` = only via `/share` |
+| `includeSystem` | `true` | emit the system prompt as a `system` message |
+| `includeFeedback` | `false` | emit `feedback/record` events as `system` messages |
+| `cliPath` | `huggingface-cli` | CLI binary for uploads (`hf` also works) |
+| `token` | `HF_TOKEN` env, else cached `~/.cache/huggingface/token` | access token |
+| `commitPrefix` | `dsh trace` | prefix for the upload commit message |
+| `redact` | `[]` | `[{ pattern, replace }]` regex rules applied to every shipped text |
+
+Override per profile by adding a row with the same id to the profile's
+`cordis.patch.yml` (a later layer's `config` replaces the whole value, not
+just changed keys):
 
 ```yaml
 - patch:
     - id: session-export-hub
       config:
         repo: edbeeching/dsh-agent-traces
+        private: true
         trigger: turn
         redact:
           - pattern: 'hf_[A-Za-z0-9]{10,}'
             replace: 'hf_***'
+```
+
+The `/share` command pushes the current session immediately; an optional
+argument overrides the dataset for that one push:
+
+```
+/share                          # push to the configured repo
+/share org/other-traces         # push this session to a different dataset
 ```
 
 ## Local development

@@ -8,8 +8,11 @@
  * typical setups — or to `hf` if `cliPath` is overridden. The dataset repo is
  * created as private on first push if it does not exist yet.
  *
- * Zero runtime dependencies: everything comes from the harness context
- * (`sessions`, `commands`) and Node builtins.
+ * Config is declared as a schemastery `Config` schema (the DSH convention):
+ * the loader validates the row's config at boot, the web settings surface can
+ * render it, and `apply()` re-validates defensively for standalone use.
+ * Everything else comes from the harness context (`sessions`, `commands`)
+ * and Node builtins.
  */
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -17,10 +20,28 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import z from "@deepseek-ai/schemastery";
 import { buildStsSession } from "./sts.js";
 const execFileAsync = promisify(execFile);
 export const name = "session-export-hub";
 export const inject = ["sessions", "commands"];
+/** Schemastery schema for the plugin's row config; validated by the loader at boot. */
+export const Config = z.object({
+    repo: z.string().required().description("Hub dataset id (owner/name)"),
+    private: z.boolean().default(true).description("create/upload the dataset as private"),
+    harness: z.string().default("deepseek-harness").description("STS `harness` field (Hub renderer/icon)"),
+    trigger: z.union(["turn", "dispose", "manual"]).default("turn")
+        .description("when to push: after every turn/end, on session dispose, or only via /share"),
+    includeSystem: z.boolean().default(true).description("emit the request/header system prompt"),
+    includeFeedback: z.boolean().default(false).description("emit feedback/record events"),
+    cliPath: z.string().default("huggingface-cli").description("CLI binary for uploads (huggingface-cli or hf)"),
+    token: z.string().default("").description("access token; empty uses HF_TOKEN or the CLI's cached login"),
+    commitPrefix: z.string().default("dsh trace").description("prefix for upload commit messages"),
+    redact: z.array(z.object({
+        pattern: z.string().required().description("regex pattern (no flags; matched globally)"),
+        replace: z.string().default("").description("replacement text"),
+    })).default([]).description("redaction rules applied to every shipped text field"),
+});
 export const DEFAULTS = {
     repo: "edbeeching/dsh-agent-traces",
     private: true,
@@ -37,15 +58,20 @@ export const DEFAULTS = {
 // Plugin
 // ---------------------------------------------------------------------------
 export function apply(ctx, config = {}) {
-    const cfg = { ...DEFAULTS, ...config };
+    // The loader validates the row's config through `Config` at boot; validating
+    // again here makes standalone/direct use fail fast with the same messages.
+    const cfg = Config({ ...DEFAULTS, ...config });
     const redact = makeRedactor(cfg.redact);
     const inFlight = new Map();
-    const push = (session) => {
+    const push = (session, overrides = {}) => {
         const key = String(session.id);
         const existing = inFlight.get(key);
         if (existing)
             return existing; // never stack two pushes for the same session
-        const job = doPush(ctx, cfg, session, redact).catch((error) => {
+        const effective = overrides && Object.keys(overrides).length > 0
+            ? Config({ ...cfg, ...overrides })
+            : cfg;
+        const job = doPush(ctx, effective, session, makeRedactor(effective.redact)).catch((error) => {
             ctx.logger.warn(`session-export-hub: push failed for ${key}: ${String(error)}`);
         });
         inFlight.set(key, job);
@@ -67,13 +93,14 @@ export function apply(ctx, config = {}) {
     });
     ctx.commands.register({
         name: "share",
-        description: `push this session's traces to the Hub dataset (${cfg.repo})`,
-        input: { hint: "" },
+        description: `push this session's traces to the Hub dataset (default: ${cfg.repo})`,
+        input: { hint: "[repo]" },
         recordInput: false,
         handler: (invocation) => {
             const session = invocation.agent.session;
-            void push(session);
-            return { kind: "success", text: `Pushing traces for session ${String(session.id)} to ${cfg.repo}…` };
+            const repo = invocation.rawInput.trim();
+            void push(session, repo ? { repo } : {});
+            return { kind: "success", text: `Pushing traces for session ${String(session.id)} to ${repo || cfg.repo}…` };
         },
     });
 }
