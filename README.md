@@ -1,5 +1,7 @@
 # dsh-session-export-hub
 
+> Repository: <https://github.com/edbeeching/dsh-session-export-hub>
+
 A [DeepSeek Harness](https://github.com/deepseek-ai) (cordis) plugin that exports
 session telemetry as **Hugging Face Session Traces (STS-Format)** JSONL and
 pushes it to a **private Hub dataset**, where it renders in the Hub's trace
@@ -105,12 +107,16 @@ with dctx.stream_reader(open('<session>.jsonl.zstd','rb')) as r:
 
 ## Verified end-to-end
 
-Tested against this repository's own live session:
-`huggingface-cli upload edbeeching/dsh-agent-traces …` created the private
-dataset and pushed
-[`session-1508fdfc…/session.jsonl`](https://huggingface.co/datasets/edbeeching/dsh-agent-traces/blob/main/session-1508fdfc-3b4b-4e77-beeb-028cf5e30a87/session.jsonl)
-(2915+ events → ~194 STS lines). Unauthenticated API access to the repo returns
-401 (private confirmed).
+- STS conversion: tested against this repository's own live session —
+  `huggingface-cli upload edbeeching/dsh-agent-traces …` created the private
+  dataset and pushed
+  [`session-1508fdfc…/session.jsonl`](https://huggingface.co/datasets/edbeeching/dsh-agent-traces/blob/main/session-1508fdfc-3b4b-4e77-beeb-028cf5e30a87/session.jsonl)
+  (3000+ events → ~194 STS lines). Unauthenticated API access returns 401
+  (private confirmed).
+- Git install: `dsh plugin --profile demo add github:edbeeching/dsh-session-export-hub`
+  installs the bundle and auto-appends it to `dsh.profile.bundles` (verified in a
+  throwaway `$DSH_HOME`); `--dump-config` shows the `# == dsh-session-export-hub`
+  layer and the module loads with `name/apply/inject` intact.
 
 ## Known limitations
 
