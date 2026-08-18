@@ -35,6 +35,20 @@ function truncate(s, max) {
         return s;
     return `${s.slice(0, max - 1)}…`;
 }
+/** Recursively apply `redact` to every string inside an arbitrary JSON value. */
+function redactDeep(value, redact) {
+    if (typeof value === "string")
+        return redact(value);
+    if (Array.isArray(value))
+        return value.map((item) => redactDeep(item, redact));
+    if (value && typeof value === "object") {
+        const out = {};
+        for (const [key, item] of Object.entries(value))
+            out[key] = redactDeep(item, redact);
+        return out;
+    }
+    return value;
+}
 /** Turn a DSH event into an STS message envelope, or null to drop the event. */
 function eventToMessage(event, opts) {
     const data = event.data ?? {};
@@ -54,7 +68,7 @@ function eventToMessage(event, opts) {
             const msg = data.message ?? {};
             const content = redact(contentText(msg.content));
             const reasoning = redact(reasoningText(msg.content));
-            const toolCalls = msg.toolCalls ?? [];
+            const toolCalls = opts.redact ? redactDeep(msg.toolCalls ?? [], opts.redact) : (msg.toolCalls ?? []);
             if (!content && !reasoning && toolCalls.length === 0)
                 return null;
             const m = { role: "assistant", content };
@@ -71,7 +85,7 @@ function eventToMessage(event, opts) {
             const m = {
                 role: "assistant",
                 content: "",
-                toolCalls: [{ id: data.callId, function: { name: data.name, arguments: data.arguments ?? "{}" } }],
+                toolCalls: [{ id: data.callId, function: { name: data.name, arguments: redact(data.arguments ?? "{}") } }],
             };
             if (time !== undefined)
                 m.timestamp = time;
@@ -137,11 +151,12 @@ function collectFacts(session) {
 /** Render a DSH session as a complete STS-Format JSONL document (no trailing blank line). */
 export function buildStsSession(session, opts) {
     const { name, model } = collectFacts(session);
+    const title = name ?? "Untitled session";
     const header = {
         type: "session",
         harness: opts.harness,
         id: String(session.id),
-        name: name ?? "Untitled session",
+        name: opts.redact ? opts.redact(title) : title,
     };
     if (model)
         header.model = model;

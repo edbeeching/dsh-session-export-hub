@@ -11,15 +11,17 @@
  * Config is declared as a schemastery `Config` schema (the DSH convention):
  * the loader validates the row's config at boot, the web settings surface can
  * render it, and `apply()` re-validates defensively for standalone use.
- * Everything else comes from the harness context (`sessions`, `commands`)
- * and Node builtins.
+ * Everything else comes from the harness context (`commands` and the session
+ * lifecycle events) and Node builtins.
  */
 import z from "@deepseek-ai/schemastery";
 import { type DshEvent } from "./sts.js";
 export declare const name = "session-export-hub";
 export declare const inject: string[];
+/** Default dataset name when `repo` is unset: `<your-username>/dsh-agent-traces`. */
+export declare const DEFAULT_DATASET_NAME = "dsh-agent-traces";
 export interface PluginConfig {
-    /** Hub dataset id, e.g. "edbeeching/dsh-agent-traces". */
+    /** Hub dataset id ("owner/name"); empty defaults to `<your-username>/dsh-agent-traces`. */
     repo: string;
     /** Create the dataset as private and pass --private on uploads. */
     private: boolean;
@@ -37,7 +39,9 @@ export interface PluginConfig {
     token: string;
     /** Prefix for the commit message on each upload. */
     commitPrefix: string;
-    /** Regex redaction rules applied to every shipped text field. */
+    /** Apply built-in secret patterns (SSH keys, common API tokens) before `redact`. */
+    redactSecrets: boolean;
+    /** Extra regex redaction rules applied after the built-ins, to every shipped text field. */
     redact: Array<{
         pattern: string;
         replace: string;
@@ -54,6 +58,7 @@ export declare const Config: z<Schemastery.ObjectS<{
     cliPath: z<string, string>;
     token: z<string, string>;
     commitPrefix: z<string, string>;
+    redactSecrets: z<boolean, boolean>;
     redact: z<({
         pattern?: string | null | undefined;
         replace?: string | null | undefined;
@@ -71,6 +76,7 @@ export declare const Config: z<Schemastery.ObjectS<{
     cliPath: z<string, string>;
     token: z<string, string>;
     commitPrefix: z<string, string>;
+    redactSecrets: z<boolean, boolean>;
     redact: z<({
         pattern?: string | null | undefined;
         replace?: string | null | undefined;
@@ -80,6 +86,16 @@ export declare const Config: z<Schemastery.ObjectS<{
     }>[]>;
 }>>;
 export declare const DEFAULTS: PluginConfig;
+/**
+ * High-signal secrets redacted by default (see `redactSecrets`). Each `pattern`
+ * is a regex source compiled with the `g` flag. `[\s\S]` also spans the `\n`
+ * escapes of a JSON string, so a PEM block inside tool-call arguments is still
+ * caught. Keep these narrow and high-signal to avoid masking ordinary text.
+ */
+export declare const SECRET_PATTERNS: Array<{
+    pattern: string;
+    replace: string;
+}>;
 interface Logger {
     info(message: string): void;
     warn(message: string): void;
@@ -98,9 +114,6 @@ interface CommandInvocation {
 interface HarnessContext {
     logger: Logger;
     on(event: string, listener: (...args: any[]) => void): void;
-    sessions: {
-        list(): SessionLike[];
-    };
     commands: {
         register(options: {
             name: string;
@@ -117,4 +130,5 @@ interface HarnessContext {
     };
 }
 export declare function apply(ctx: HarnessContext, config?: Partial<PluginConfig>): void;
+export declare function makeRedactor(rules: PluginConfig["redact"], includeSecrets?: boolean): ((text: string) => string) | undefined;
 export {};

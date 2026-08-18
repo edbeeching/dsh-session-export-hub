@@ -12,6 +12,8 @@ viewer (Data Studio). Think of it as "pi-share-hf, but for DSH sessions".
   `toolCalls`/`toolCallId` → stitched tool call/result pairs).
 - **Transport**: shells out to `huggingface-cli` (default) or `hf`, using your
   cached CLI login; creates the dataset via the Hub HTTP API if it is missing.
+- **Redaction by default**: SSH keys and common API tokens are scrubbed before
+  upload (see [Security & redaction](#security--redaction)).
 - **Zero runtime dependencies**: only Node builtins + the harness context.
 
 ## What is pushed
@@ -32,10 +34,11 @@ Each session is converted from the in-memory event stream (`session.events`):
 Files land at `<repo>/<session-id>/session.jsonl` and are **replaced on every
 push**, so the viewer always shows the current state of the session.
 
-> ⚠️ Traces contain prompts, tool arguments, command output, file contents,
-> local paths, and possibly secrets — the HF docs' redaction warning applies.
-> The dataset is created **private** by default. Mount `redact` rules to scrub
-> text before upload (see below).
+> ⚠️ Traces contain prompts, tool arguments, command output, file contents and
+> local paths. The dataset is created **private** by default, and built-in
+> secret patterns (SSH keys, common API tokens) are redacted automatically —
+> but redaction is **best effort**, not a guarantee. Review the
+> [Security & redaction](#security--redaction) section before enabling uploads.
 
 ## Install into a profile
 
@@ -55,6 +58,10 @@ dsh plugin --profile web add ./dsh-session-export-hub-0.1.0.tgz   # pnpm pack ou
 install needs **no `allowBuilds` permission** (pnpm runs no code at install
 time). Remove with `dsh plugin --profile web remove dsh-session-export-hub`.
 
+> **`repo` is optional.** If unset, the plugin defaults to
+> `<your-username>/dsh-agent-traces` (resolved from your logged-in HF account).
+> Override it to point at a specific dataset (see below).
+
 ### Configuration
 
 Config is declared as a schemastery `Config` schema: the loader **validates
@@ -63,16 +70,17 @@ defaults are applied automatically. The table below lists every key.
 
 | key | default | meaning |
 |---|---|---|
-| `repo` | `edbeeching/dsh-agent-traces` | Hub dataset id (`owner/name`), created private if missing |
+| `repo` | `<your-username>/dsh-agent-traces` | Hub dataset id (`owner/name`); set it to override the default |
 | `private` | `true` | create/upload with private visibility |
 | `harness` | `deepseek-harness` | STS `harness` field (renderer/icon on the Hub) |
 | `trigger` | `turn` | `turn` = push after every turn/end (+ final push on dispose) · `dispose` = push when a session closes · `manual` = only via `/share` |
 | `includeSystem` | `true` | emit the system prompt as a `system` message |
 | `includeFeedback` | `false` | emit `feedback/record` events as `system` messages |
 | `cliPath` | `huggingface-cli` | CLI binary for uploads (`hf` also works) |
-| `token` | `HF_TOKEN` env, else cached `~/.cache/huggingface/token` | access token |
+| `token` | `HF_TOKEN` env, else cached `~/.cache/huggingface/token` | access token (passed via `HF_TOKEN`, never on argv) |
 | `commitPrefix` | `dsh trace` | prefix for the upload commit message |
-| `redact` | `[]` | `[{ pattern, replace }]` regex rules applied to every shipped text |
+| `redactSecrets` | `true` | redact built-in secret patterns (SSH keys, common API tokens) |
+| `redact` | `[]` | extra `[{ pattern, replace }]` regex rules, applied after the built-ins |
 
 Override per profile by adding a row with the same id to the profile's
 `cordis.patch.yml` (a later layer's `config` replaces the whole value, not
@@ -82,12 +90,14 @@ just changed keys):
 - patch:
     - id: session-export-hub
       config:
-        repo: edbeeching/dsh-agent-traces
+        # optional — defaults to <your-username>/dsh-agent-traces
+        repo: your-username/your-dataset
         private: true
+        redactSecrets: true
         trigger: turn
         redact:
-          - pattern: 'hf_[A-Za-z0-9]{10,}'
-            replace: 'hf_***'
+          - pattern: 'my_internal_project_[A-Za-z0-9]+'
+            replace: '[redacted]'
 ```
 
 The `/share` command pushes the current session immediately; an optional
@@ -97,6 +107,38 @@ argument overrides the dataset for that one push:
 /share                          # push to the configured repo
 /share org/other-traces         # push this session to a different dataset
 ```
+
+## Security & redaction
+
+This plugin ships **private by default** and redacts high-signal secrets by
+default, but treat it as a last line of defence, not a guarantee: a custom tool
+can emit a secret in any shape, and regexes only catch the shapes below.
+
+**Built-in patterns** (`redactSecrets: true`, on by default) are applied to
+every text field that ships — message content, reasoning, tool call arguments
+and results, and the session title:
+
+- SSH private keys: any PEM / PKCS#8 / OpenSSH `-----BEGIN … PRIVATE KEY-----` block.
+- SSH public keys: `ssh-rsa`, `ssh-ed25519`, `ssh-dss`, `ecdsa-sha2-nistp*` bodies.
+- Hugging Face tokens (`hf_…`), OpenAI (`sk-…` / `sk-proj-…`), Anthropic
+  (`sk-ant-…`), AWS access keys (`AKIA…` / `ASIA…` / `AIDA…`), GitHub
+  (`gh*_…` / `github_pat_…`), Slack (`xox…`), and JWTs (`eyJ…`).
+
+**Extend** with `redact` rules (regex source, matched globally); they run after
+the built-ins. **Disable** the built-ins with `redactSecrets: false`.
+
+Additional hardening:
+
+- The HF token is passed to the CLI via the `HF_TOKEN` environment variable,
+  never as a `--token` command-line argument (which would be visible in `ps`).
+- The dataset is created/uploaded with `--private` by default (`private: true`).
+- `repo` defaults to **your own** `<your-username>/dsh-agent-traces` (resolved
+  from the authenticated account), so a misconfigured install can never push
+  to someone else's repo.
+
+Known limits: the `cwd` (local path) header field is **not** redacted by default
+(it is usually useful context, not a secret) — add a `redact` rule if your
+filesystem layout is sensitive.
 
 ## Local development
 

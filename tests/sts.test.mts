@@ -130,4 +130,27 @@ const chunkOnly = session([
 ]);
 assert.equal(parseLines(buildStsSession(chunkOnly, OPTIONS)).length, 1);
 
-console.log(`sts.test.mts: all ${14} checks passed`);
+// 15. Tool-call arguments are redacted (e.g. a token embedded in `arguments`).
+const secretCall = session([
+  ev("tool/call", { callId: "t-secret", name: "write", arguments: '{"path":"/tmp/x","content":"hf_abcdefghijklmnopqrstuvwxyz0123456789"}' }, 1, 0),
+]);
+const secretCallLines = parseLines(buildStsSession(secretCall, { ...OPTIONS, redact: (s) => s.replace(/hf_[A-Za-z0-9]{20,}/g, "hf_[redacted]") }));
+assert.ok(secretCallLines[1].message.toolCalls[0].function.arguments.includes("hf_[redacted]"));
+assert.ok(!secretCallLines[1].message.toolCalls[0].function.arguments.includes("hf_abcdefghijklmnopqrstuvwxyz0123456789"));
+
+// 16. Assistant-message toolCalls (structured) are redacted deeply.
+const assistantSecret = session([
+  ev("assistant/message", { message: { role: "assistant", content: [{ type: "text", text: "ok" }], toolCalls: [{ id: "t1", function: { name: "bash", arguments: '{"cmd":"echo hf_abcdefghijklmnopqrstuvwxyz0123456789"}' } }] } }, 1, 0),
+]);
+const assistantSecretLines = parseLines(buildStsSession(assistantSecret, { ...OPTIONS, redact: (s) => s.replace(/hf_[A-Za-z0-9]{20,}/g, "hf_[redacted]") }));
+assert.ok(assistantSecretLines[1].message.toolCalls[0].function.arguments.includes("hf_[redacted]"));
+
+// 17. Session header name is redacted.
+const titledSecret = session([
+  ev("session/title", { title: "leak hf_abcdefghijklmnopqrstuvwxyz0123456789 here" }, 1, 0),
+]);
+const titledLines = parseLines(buildStsSession(titledSecret, { ...OPTIONS, redact: (s) => s.replace(/hf_[A-Za-z0-9]{20,}/g, "hf_[redacted]") }));
+assert.ok(titledLines[0].name.includes("hf_[redacted]"));
+assert.ok(!titledLines[0].name.includes("hf_abcdefghijklmnopqrstuvwxyz0123456789"));
+
+console.log(`sts.test.mts: all ${17} checks passed`);

@@ -4,6 +4,15 @@
 # `dsh plugin --profile <name> add <this-package>` (the `dsh.bundle` manifest
 # declaration in package.json is what makes it a layer). Users may override any
 # key here from their profile's own cordis.patch.yml or a --patch overlay.
+#
+# `repo` is intentionally left unset here. The plugin resolves it at push time
+# to `<your-username>/dsh-agent-traces` from your logged-in HF account. Override
+# it in the profile's cordis.patch.yml, e.g.:
+#
+#   - patch:
+#       - id: session-export-hub
+#         config:
+#           repo: your-username/your-dataset
 - insert:
     - id: session-export-hub
       name: dsh-session-export-hub
